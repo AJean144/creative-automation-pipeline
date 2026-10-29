@@ -1,0 +1,26 @@
+{
+  "name": "creative-automation-pipeline",
+  "version": "0.1.0",
+  "description": "Turn a campaign brief into localized, brand-checked social ad creatives in every aspect ratio.",
+  "type": "module",
+  "bin": {
+    "creative-pipeline": "src/cli.js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "start": "node src/cli.js --brief examples/brief.yaml",
+    "test": "node --test",
+    "start:live": "node --env-file=.env.local src/cli.js --brief examples/brief.yaml --provider higgsfield",
+    "seedance": "node --env-file=.env.local index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@higgsfield/client": "^0.2.6",
+    "@typesafe-ai/sdk": "^0.7.0",
+    "sharp": "^0.35.5",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  }
+}

@@ -1,0 +1,25 @@
+# Same products, Japanese market: shows localization and a CJK text layout.
+campaign:
+  id: summer-sun-jp
+  market: Japan
+  audience: Commuters 25-45 who want light, non-greasy sun protection
+  locales: [en-US, ja-JP]
+  message:
+    en-US: Light protection for long city days.
+    ja-JP: 長い一日も、軽やかにUVケア。
+
+brand:
+  name: Solara
+  logo: brand/logo.svg
+  colors: ["#FF7A1A", "#1E2A44", "#FFFFFF"]
+  prohibitedWords: [cure, guaranteed, miracle, 完全, 治る]
+
+products:
+  - id: solara-spf50
+    name: Solara SPF 50 Sunscreen
+    subject: tube of sunscreen
+    description: a matte orange squeeze tube of mineral sunscreen lying on warm beach sand
+  - id: solara-aloe-gel
+    name: Solara After-Sun Aloe Gel
+    subject: bottle of aloe gel
+    description: a clear pump bottle of green aloe gel on a wet stone beside fresh aloe leaves

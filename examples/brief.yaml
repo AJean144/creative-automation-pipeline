@@ -1,0 +1,27 @@
+# Example campaign brief. Paths are relative to this file.
+campaign:
+  id: summer-sun-mx
+  market: Mexico
+  audience: Active adults 20-40 who spend weekends outdoors
+  locales: [en-US, es-MX]
+  message:
+    en-US: Sun-ready skin, all summer long.
+    es-MX: Piel lista para el sol todo el verano.
+
+brand:
+  name: Solara
+  logo: brand/logo.svg
+  colors: ["#FF7A1A", "#1E2A44", "#FFFFFF"]
+  prohibitedWords: [cure, guaranteed, miracle, "100% safe", "clinically proven", waterproof, cura, garantizado, milagro]
+
+products:
+  # Has a file in assets/solara-spf50/, so the pipeline reuses it.
+  - id: solara-spf50
+    name: Solara SPF 50 Sunscreen
+    subject: tube of sunscreen
+    description: a matte orange squeeze tube of mineral sunscreen lying on warm beach sand
+  # No asset folder, so the pipeline generates a hero image.
+  - id: solara-aloe-gel
+    name: Solara After-Sun Aloe Gel
+    subject: bottle of aloe gel
+    description: a clear pump bottle of green aloe gel on a wet stone beside fresh aloe leaves
