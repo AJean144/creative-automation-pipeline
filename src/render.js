@@ -15,7 +15,8 @@ const xml = s => s.replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&
 // CJK and other full-width glyphs are about twice as wide as Latin ones and have no spaces to break on.
 const isWide = ch => /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿＀-｠]/u.test(ch);
 const NO_LINE_START = /^[、。，．！？」』）】ー]$/u;
-const textWidth = (s, size) => [...s].reduce((w, ch) => w + (isWide(ch) ? 1.0 : 0.55) * size, 0);
+const glyphWidth = ch => (isWide(ch) ? 1.0 : /\p{Lu}/u.test(ch) ? 0.72 : 0.55);
+const textWidth = (s, size) => [...s].reduce((w, ch) => w + glyphWidth(ch) * size, 0);
 
 // shortcut: width is estimated per glyph, not measured from the font; swap in real font metrics (e.g. opentype.js) if lines overflow.
 export function wrapText(text, size, maxWidth) {
@@ -51,7 +52,9 @@ export async function renderBase(hero, ratio, { message, productName, accent }) 
 
   const lines = wrapText(message, msgSize, maxWidth);
   const lineHeight = msgSize * 1.15;
-  const textHeight = nameSize * 1.6 + lines.length * lineHeight;
+  const nameLines = wrapText(productName.toUpperCase(), nameSize, maxWidth);
+  const nameHeight = nameSize * (0.3 + 1.3 * nameLines.length);
+  const textHeight = nameHeight + lines.length * lineHeight;
   const textTop = h - pad - textHeight;
   const barX = pad;
   const textX = pad + Math.round(unit * 0.03);
@@ -69,9 +72,9 @@ export async function renderBase(hero, ratio, { message, productName, accent }) 
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
     <rect x="${barX}" y="${textTop}" width="${Math.round(unit * 0.012)}" height="${textHeight}" fill="${accent}"/>
-    <text x="${textX}" y="${textTop + nameSize}" font-family="${FONT}" font-size="${nameSize}" font-weight="600"
-      fill="${TEXT_COLOR}" fill-opacity="0.85" letter-spacing="2">${xml(productName.toUpperCase())}</text>
-    ${lines.map((l, i) => `<text x="${textX}" y="${textTop + nameSize * 1.6 + (i + 0.85) * lineHeight}"
+    ${nameLines.map((l, i) => `<text x="${textX}" y="${textTop + nameSize * (1 + 1.3 * i)}" font-family="${FONT}" font-size="${nameSize}" font-weight="600"
+      fill="${TEXT_COLOR}" fill-opacity="0.85" letter-spacing="2">${xml(l)}</text>`).join('\n')}
+    ${lines.map((l, i) => `<text x="${textX}" y="${textTop + nameHeight + (i + 0.85) * lineHeight}"
       font-family="${FONT}" font-size="${msgSize}" font-weight="700" fill="${TEXT_COLOR}">${xml(l)}</text>`).join('\n')}
   </svg>`;
 
@@ -82,7 +85,9 @@ export async function renderBase(hero, ratio, { message, productName, accent }) 
     .toBuffer();
   const image = await sharp(background).composite([{ input: Buffer.from(svg) }]).png().toBuffer();
 
-  const textBox = { left: textX, top: Math.round(textTop), width: Math.min(maxWidth, w - textX), height: Math.round(textHeight) };
+  // Copy too long for the ad runs off the top; the box stays on the image so checks can run and report it.
+  const top = Math.max(0, Math.round(textTop));
+  const textBox = { left: textX, top, width: Math.min(maxWidth, w - textX), height: Math.min(Math.round(textHeight), h - top) };
   return { image, background, textBox, textColor: TEXT_COLOR };
 }
 
@@ -91,7 +96,8 @@ export async function addLogo(image, ratio, logoPath) {
   const [w, h] = RATIOS[ratio];
   const unit = Math.min(w, h);
   const pad = Math.round(unit * 0.06);
-  const logo = await sharp(logoPath).resize({ width: Math.round(unit * 0.22) }).png().toBuffer();
+  const side = Math.round(unit * 0.22);
+  const logo = await sharp(logoPath).resize(side, side, { fit: 'inside' }).png().toBuffer();
   const { width, height } = await sharp(logo).metadata();
   const out = await sharp(image).composite([{ input: logo, left: pad, top: pad }]).png().toBuffer();
   return { image: out, logo, logoBox: { left: pad, top: pad, width, height } };

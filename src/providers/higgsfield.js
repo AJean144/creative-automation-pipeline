@@ -3,7 +3,7 @@ import { config, higgsfield } from '@higgsfield/client/v2';
 const MODEL = process.env.HF_IMAGE_MODEL ?? 'higgsfield-ai/soul/v2/standard';
 
 let configured = false;
-function ensureConfigured() {
+export function ensureConfigured() {
   if (configured) return;
   if (!process.env.HF_CREDENTIALS) {
     throw new Error('HF_CREDENTIALS is not set. Add HF_CREDENTIALS=key-id:key-secret to .env.local, or run with --provider mock');

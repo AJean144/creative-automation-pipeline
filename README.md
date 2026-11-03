@@ -14,7 +14,7 @@ That runs the example brief with a built-in mock image model. It needs no keys a
 ```
 brief.yaml ──► validate ──► per locale: legal check ──► hero image per product ──► per ratio: crop, text, logo ──► checks ──► out/
                              (fail closed, runs first)    reuse examples/assets/<id>/                          contrast, logo,
-                                                          or generate (Higgsfield)                             palette, visual QA
+                                                          or generate (Higgsfield)                             palette, layout, visual QA
 ```
 
 For each product:
@@ -45,7 +45,7 @@ Requires Node 20.6 or later.
 | `npm start` | Example brief, mock images | none | free |
 | `npm run start:live` | Example brief, real AI images from Higgsfield | `HF_CREDENTIALS` | under 2 cents |
 | `npm run start:live -- --brief examples/brief-jp.yaml` | Japan brief: English and Japanese copy | `HF_CREDENTIALS` | under 2 cents |
-| `npm test` | 13 tests, no network | none | free |
+| `npm test` | 19 tests, no network | none | free |
 | `node --env-file=.env.local scripts/probe-visual.js out/summer-sun-jp` | Runs 7 known cases through visual QA (needs a live run first) | `TYPESAFE_API_KEY` | a fraction of a cent |
 
 CLI options:
@@ -99,6 +99,7 @@ Two kinds of checks run on each ad. **Measured** checks are math on pixels: the 
 | Contrast | Measured | Text vs. the brightest 10% of pixels behind it ≥ 4.5:1 (WCAG AA) | Unreadable text on a bright photo |
 | Logo | Measured | Logo differs from what is behind it by ΔE2000 ≥ 10 | A white logo on a white beach disappears |
 | Palette | Measured | Brand colours cover ≥ 2% of the ad (within ΔE 15) | Ad drifts off-brand |
+| Layout | Measured | Text starts below the logo | Copy too long for the ad runs into the logo or off the top |
 | Visual | Judged (TypeSafe) | Product is there, whole, and its label has no fake words | AI images cut products off and write fake text |
 
 A failed check marks the ad `warn`: the file is still written, and the report says why. An ad with no failures but a skipped check is `unchecked`. Only legal fails closed, because blocked copy should never reach a reviewer as a finished asset.
@@ -171,6 +172,7 @@ A creative's entry in `report.json`:
     "contrast": { "pass": true, "value": 8.46, "limit": 4.5 },
     "logo":     { "pass": true, "value": 23.6, "limit": 10 },
     "palette":  { "pass": true, "value": 0.316, "limit": 0.02 },
+    "layout":   { "pass": true, "textTop": 798, "logoBottom": 134 },
     "visual":   { "pass": true, "present": 0.74, "whole": 0.95, "garbled": 0.13, "model": "jev-1.14.0" }
   }
 }

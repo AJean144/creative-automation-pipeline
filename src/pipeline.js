@@ -38,7 +38,8 @@ async function getHeroes(brief, product, provider, storage, log) {
   const existing = await findHero(brief.dir, product.id);
   if (existing) {
     log(`  ${product.id}: reusing ${path.relative(process.cwd(), existing)}`);
-    const buffer = await readFile(existing);
+    // Phone photos store rotation as a tag and cutouts have no background; settle both before QA, crop and render.
+    const buffer = await sharp(await readFile(existing)).autoOrient().flatten({ background: '#FFFFFF' }).png().toBuffer();
     const { result, check } = await checkVisual(buffer, brief, product);
     const { width, height } = await sharp(buffer).metadata();
     const crop = async r => {
@@ -101,6 +102,7 @@ async function renderProduct(brief, product, provider, storage, log) {
         contrast: await textContrast(base.background, base.textBox, base.textColor),
         logo: await logoVisible(base.image, image, logo, logoBox),
         palette: await paletteShare(image, brief.brand.colors),
+        layout: { pass: base.textBox.top >= logoBox.top + logoBox.height, textTop: base.textBox.top, logoBottom: logoBox.top + logoBox.height },
         visual: hero.visual[ratio],
       };
       const file = path.join(brief.campaign.id, product.id, ratio, `${locale}.png`);
