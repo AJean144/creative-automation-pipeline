@@ -45,7 +45,7 @@ Requires Node 20.6 or later.
 | `npm start` | Example brief, mock images | none | free |
 | `npm run start:live` | Example brief, real AI images from Higgsfield | `HF_CREDENTIALS` | under 2 cents |
 | `npm run start:live -- --brief examples/brief-jp.yaml` | Japan brief: English and Japanese copy | `HF_CREDENTIALS` | under 2 cents |
-| `npm test` | 21 tests, no network | none | free |
+| `npm test` | 23 tests, no network | none | free |
 | `node --env-file=.env.local scripts/probe-visual.js out/summer-sun-jp` | Runs 7 known cases through visual QA (needs a live run first) | `TYPESAFE_API_KEY` | a fraction of a cent |
 
 CLI options:

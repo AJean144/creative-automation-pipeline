@@ -49,10 +49,11 @@ export async function inspect(imageBuffer, subject, brandNames) {
 // The decision lives in code. Each judgment maps to fail (act), review (a person looks), or ok.
 export function verdict(r) {
   const issues = [];
-  const band = (p, failWhenHigh) => (failWhenHigh ? p >= YES : p <= NO) ? 'fail' : (p > NO && p < YES ? 'review' : 'ok');
+  // A score that is missing or not a number goes to a person: it can't vouch for the ad, and a new image won't fix it.
+  const band = (p, failWhenHigh) => !Number.isFinite(p) ? 'review' : (failWhenHigh ? p >= YES : p <= NO) ? 'fail' : (p > NO && p < YES ? 'review' : 'ok');
   const add = (name, level) => level !== 'ok' && issues.push({ check: name, level });
   add('product_missing', band(r.present, false));
-  if (r.present >= NO) {
+  if (!(r.present < NO)) {
     add('product_cut_off', band(r.whole, false));
     add('garbled_label', band(r.garbled, true));
   }

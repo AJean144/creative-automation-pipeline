@@ -10,7 +10,8 @@ const Brief = z.object({
     id: z.string().regex(/^[a-z0-9-]+$/, 'use lowercase letters, numbers and dashes (it becomes a folder name)'),
     market: z.string().min(1),
     audience: z.string().min(1),
-    locales: z.array(z.string().min(2)).min(1),
+    // Becomes a file name, so it gets the same care as the ids.
+    locales: z.array(z.string().regex(/^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/, 'use a locale tag such as en-US or ja-JP (it becomes a file name)')).min(1),
     // Keyed by locale, so every locale's copy is reviewed by a human before it ships.
     message: z.record(z.string(), z.string().min(1)),
   }),

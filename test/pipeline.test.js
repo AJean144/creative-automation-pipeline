@@ -74,6 +74,29 @@ test('brief validation rejects a single product and a missing locale message', a
   await assert.rejects(loadBrief(file), /at least two products[\s\S]*no message for locale es-MX|no message for locale es-MX[\s\S]*at least two products/);
 });
 
+test('brief validation rejects a locale that could escape the output folder', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'brief-'));
+  const brief = YAML.parse(await readFile(path.join(EXAMPLES, 'brief.yaml'), 'utf8'));
+  const bad = '../../escaped';
+  brief.campaign.locales = ['en-US', bad];
+  brief.campaign.message[bad] = 'Hello';
+  const file = path.join(dir, 'bad.yaml');
+  await writeFile(file, YAML.stringify(brief));
+  await assert.rejects(loadBrief(file), /locale/i);
+  await assert.doesNotReject(loadBrief(path.join(EXAMPLES, 'brief.yaml')));
+  await assert.doesNotReject(loadBrief(path.join(EXAMPLES, 'brief-jp.yaml')));
+});
+
+test('visual verdict: a missing or broken score is never a pass', async () => {
+  const { verdict } = await import('../src/checks/visual.js');
+  for (const r of [{}, { present: NaN, whole: NaN, garbled: NaN }, { present: 0.95, whole: undefined, garbled: 0.1 }]) {
+    const v = verdict(r);
+    assert.equal(v.pass, false, JSON.stringify(r));
+    assert.equal(v.retry, false, 'a broken response should go to a person, not pay for a new image');
+  }
+  assert.equal(verdict({ present: 0.95, whole: 0.95, garbled: 0.1 }).pass, true);
+});
+
 test('pipeline reuses assets, generates missing ones, blocks prohibited copy', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'run-'));
   await cp(EXAMPLES, dir, { recursive: true });
