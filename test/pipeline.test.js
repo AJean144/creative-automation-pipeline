@@ -235,9 +235,18 @@ test('long uppercase product names and all-caps copy stay inside the right margi
   assert.deepEqual(await raw(image), await raw(background));
 });
 
-test('copy long enough to reach the logo fails the layout check', async () => {
+test('long copy shrinks to fit below the logo, short copy keeps its size', async () => {
+  const hero = await solid(1200, 1200, '#808080');
+  const opts = { productName: 'P', accent: '#FF0000' };
+  const short = await renderBase(hero, '1x1', { ...opts, message: 'Sun care' });
+  assert.equal(short.textBox.top, 879); // full 70 px type
+  const long = await renderBase(hero, '1x1', { ...opts, message: 'Stay protected all summer long with our lightweight everyday formula. '.repeat(4) });
+  assert.ok(long.textBox.top >= 65 + 238, `text starts at ${long.textBox.top}, inside the logo area`);
+});
+
+test('copy too long even at the smallest type fails the layout check', async () => {
   const { report } = await runWithHero('hero.png', await solid(1200, 1200, '#808080'), raw => {
-    raw.campaign.message['en-US'] = 'Stay protected all summer long with our lightweight everyday formula. '.repeat(4);
+    raw.campaign.message['en-US'] = 'Stay protected all summer long with our lightweight everyday formula. '.repeat(12);
   });
   const ads = report.products[0].creatives.filter(c => c.locale === 'en-US');
   const byRatio = Object.fromEntries(ads.map(c => [c.ratio, c]));

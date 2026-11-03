@@ -45,7 +45,7 @@ Requires Node 20.6 or later.
 | `npm start` | Example brief, mock images | none | free |
 | `npm run start:live` | Example brief, real AI images from Higgsfield | `HF_CREDENTIALS` | under 2 cents |
 | `npm run start:live -- --brief examples/brief-jp.yaml` | Japan brief: English and Japanese copy | `HF_CREDENTIALS` | under 2 cents |
-| `npm test` | 19 tests, no network | none | free |
+| `npm test` | 21 tests, no network | none | free |
 | `node --env-file=.env.local scripts/probe-visual.js out/summer-sun-jp` | Runs 7 known cases through visual QA (needs a live run first) | `TYPESAFE_API_KEY` | a fraction of a cent |
 
 CLI options:
@@ -99,7 +99,7 @@ Two kinds of checks run on each ad. **Measured** checks are math on pixels: the 
 | Contrast | Measured | Text vs. the brightest 10% of pixels behind it ≥ 4.5:1 (WCAG AA) | Unreadable text on a bright photo |
 | Logo | Measured | Logo differs from what is behind it by ΔE2000 ≥ 10 | A white logo on a white beach disappears |
 | Palette | Measured | Brand colours cover ≥ 2% of the ad (within ΔE 15) | Ad drifts off-brand |
-| Layout | Measured | Text starts below the logo | Copy too long for the ad runs into the logo or off the top |
+| Layout | Measured | Text starts below the logo | Long copy shrinks to fit, down to a floor. Past that it runs into the logo or off the top, and is never cut |
 | Visual | Judged (TypeSafe) | Product is there, whole, and its label has no fake words | AI images cut products off and write fake text |
 
 A failed check marks the ad `warn`: the file is still written, and the report says why. An ad with no failures but a skipped check is `unchecked`. Only legal fails closed, because blocked copy should never reach a reviewer as a finished asset.

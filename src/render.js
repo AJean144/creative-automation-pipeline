@@ -40,20 +40,33 @@ export function wrapText(text, size, maxWidth) {
   return lines;
 }
 
+// Long copy (translations run long) steps the type down until it fits, stopping at a floor that stays readable.
+// Copy still too long at the floor runs high, and the layout check reports it; it is never cut, because legal approved those words.
+function fitMessage(message, unit, maxWidth, maxHeight) {
+  const floor = Math.round(unit * 0.04);
+  let size = Math.round(unit * 0.065);
+  let lines = wrapText(message, size, maxWidth);
+  while (size > floor && lines.length * size * 1.15 > maxHeight) {
+    size -= 1;
+    lines = wrapText(message, size, maxWidth);
+  }
+  return { msgSize: size, lines };
+}
+
 // Crop the hero to the ratio, then draw a dark scrim, brand accent bar, product name and message.
 // Returns the composed image, plus the background (no text) and text box the contrast check measures.
 export async function renderBase(hero, ratio, { message, productName, accent }) {
   const [w, h] = RATIOS[ratio];
   const unit = Math.min(w, h);
   const pad = Math.round(unit * 0.06);
-  const msgSize = Math.round(unit * 0.065);
   const nameSize = Math.round(unit * 0.032);
   const maxWidth = w - pad * 2 - Math.round(unit * 0.03);
 
-  const lines = wrapText(message, msgSize, maxWidth);
-  const lineHeight = msgSize * 1.15;
   const nameLines = wrapText(productName.toUpperCase(), nameSize, maxWidth);
   const nameHeight = nameSize * (0.3 + 1.3 * nameLines.length);
+  // Room between the bottom padding and the tallest logo addLogo can place.
+  const { msgSize, lines } = fitMessage(message, unit, maxWidth, h - pad * 2 - Math.round(unit * 0.22) - nameHeight);
+  const lineHeight = msgSize * 1.15;
   const textHeight = nameHeight + lines.length * lineHeight;
   const textTop = h - pad - textHeight;
   const barX = pad;
