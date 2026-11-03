@@ -28,6 +28,7 @@ if (values.help || !values.brief) {
 try {
   const brief = await loadBrief(values.brief);
   const provider = { name: values.provider, ...getProvider(values.provider) };
+  provider.ensureConfigured?.(); // Setup errors stop here with exit 1, before any ads are built.
   const report = await runPipeline(brief, { provider, storage: new LocalStorage(values.out) });
   // Non-zero exit lets CI or a scheduler notice blocked copy or a failed product.
   process.exit(report.summary.blocked || report.summary.failedProducts ? 2 : 0);

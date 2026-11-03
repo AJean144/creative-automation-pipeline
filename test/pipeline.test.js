@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, readFile, cp } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, cp, rm } from 'node:fs/promises';
+import { existsSync, mkdtempSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -8,7 +10,7 @@ import YAML from 'yaml';
 import { loadBrief } from '../src/brief.js';
 import { findProhibited } from '../src/checks/legal.js';
 import { textContrast, logoVisible } from '../src/checks/brand.js';
-import { wrapText } from '../src/render.js';
+import { wrapText, renderBase, addLogo } from '../src/render.js';
 import { runPipeline } from '../src/pipeline.js';
 import { LocalStorage } from '../src/storage.js';
 import * as mock from '../src/providers/mock.js';
@@ -28,6 +30,17 @@ test('legal check matches whole words, any case, accented text', () => {
   assert.deepEqual(findProhibited('Miraculous results', ['miracle']), []);
   assert.deepEqual(findProhibited('Es 100% safe para todos', ['100% safe']), ['100% safe']);
   assert.deepEqual(findProhibited('くすみが治る', ['治る']), ['治る']);
+});
+
+test('legal check sees through spacing, Unicode forms and invisible characters', () => {
+  const phrase = ['clinically proven'];
+  assert.deepEqual(findProhibited('Clinically  proven', phrase), phrase);
+  assert.deepEqual(findProhibited('clinically\nproven', phrase), phrase);
+  assert.deepEqual(findProhibited('Curacio\u0301n total', ['curación']), ['curación']);
+  assert.deepEqual(findProhibited('mir\u200Bacle', ['miracle']), ['miracle']);
+  assert.deepEqual(findProhibited('ﬁrst aid', ['first']), ['first']);
+  assert.deepEqual(findProhibited('ﾅｵﾙ', ['ナオル']), ['ナオル']);
+  assert.deepEqual(findProhibited('Miraculous results', ['miracle']), []);
 });
 
 test('wrapText breaks CJK between characters without inserting spaces', () => {
@@ -77,11 +90,67 @@ test('pipeline reuses assets, generates missing ones, blocks prohibited copy', a
   const bySource = Object.fromEntries(report.products.map(p => [p.product, p.heroSource]));
   assert.deepEqual(bySource, { 'solara-spf50': 'reused', 'solara-aloe-gel': 'generated' });
   assert.equal(report.summary.blocked, 2);          // es-MX blocked for both products
-  assert.equal(report.summary.pass + report.summary.warn, 6); // 2 products x 3 ratios x en-US
+  assert.equal(report.summary.pass + report.summary.unchecked + report.summary.warn, 6); // 2 products x 3 ratios x en-US
 
   const sample = path.join(dir, 'out', 'summer-sun-mx', 'solara-spf50', '9x16', 'en-US.png');
   const { width, height } = await sharp(sample).metadata();
   assert.deepEqual([width, height], [1080, 1920]);
+});
+
+test('copy blocked in every locale generates no images', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'run-'));
+  await cp(EXAMPLES, dir, { recursive: true });
+  const raw = YAML.parse(await readFile(path.join(dir, 'brief.yaml'), 'utf8'));
+  for (const locale of raw.campaign.locales) raw.campaign.message[locale] = 'A miracle cure.';
+  await writeFile(path.join(dir, 'brief.yaml'), YAML.stringify(raw));
+
+  let calls = 0;
+  const report = await runPipeline(await loadBrief(path.join(dir, 'brief.yaml')), {
+    provider: { name: 'counting', generate: (...args) => { calls++; return mock.generate(...args); } },
+    storage: new LocalStorage(path.join(dir, 'out')),
+    log: () => {},
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(report.summary.blocked, 4); // 2 products x 2 locales
+  assert.equal(report.summary.failedProducts, 0);
+});
+
+test('an ad whose visual check was skipped is unchecked, not a pass', async (t) => {
+  const key = process.env.TYPESAFE_API_KEY;
+  delete process.env.TYPESAFE_API_KEY;
+  t.after(() => { if (key !== undefined) process.env.TYPESAFE_API_KEY = key; });
+
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'run-'));
+  const report = await runPipeline(await loadBrief(path.join(EXAMPLES, 'brief.yaml')), {
+    provider: { name: 'mock', ...mock },
+    storage: new LocalStorage(dir),
+    log: () => {},
+  });
+
+  assert.equal(report.summary.pass, 0);
+  assert.equal(report.summary.unchecked + report.summary.warn, 12);
+  const clean = report.products.flatMap(p => p.creatives).filter(c => c.status === 'unchecked');
+  assert.ok(clean.length > 0 && clean.every(c => c.checks.visual.skipped));
+});
+
+test('findHero skips hidden files such as macOS ._hero.jpg', async () => {
+  const { findHero } = await import('../src/assets.js');
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'assets-'));
+  await mkdir(path.join(dir, 'assets', 'p'), { recursive: true });
+  await writeFile(path.join(dir, 'assets', 'p', '._hero.jpg'), 'x');
+  assert.equal(await findHero(dir, 'p'), null);
+  await writeFile(path.join(dir, 'assets', 'p', 'hero.jpg'), 'x');
+  assert.equal(await findHero(dir, 'p'), path.join(dir, 'assets', 'p', 'hero.jpg'));
+});
+
+test('missing Higgsfield credentials exit 1 before any work starts', () => {
+  const out = path.join(mkdtempSync(path.join(os.tmpdir(), 'cli-')), 'out');
+  const { HF_CREDENTIALS, ...env } = process.env;
+  const run = spawnSync(process.execPath, ['src/cli.js', '--brief', 'examples/brief.yaml', '--provider', 'higgsfield', '--out', out], { env, encoding: 'utf8' });
+  assert.equal(run.status, 1, run.stderr);
+  assert.match(run.stderr, /HF_CREDENTIALS is not set/);
+  assert.equal(existsSync(out), false);
 });
 
 test('visual verdict: decisions follow the thresholds, garbled labels never trigger a retry', async () => {
@@ -115,4 +184,84 @@ test('labelCrop widens a thin product box to at most 2:1, inside the image', asy
   assert.ok(c.left >= 0 && c.left + c.width <= 2048);
   const edge = labelCrop(1000, 1000, { left: 0, right: 0.02, top: 0, bottom: 1 });
   assert.deepEqual([edge.left, edge.width], [0, 500]);
+});
+
+// Runs the example brief with one product's hero replaced, and returns the report and output folder.
+async function runWithHero(heroFile, hero, edit = () => {}) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'run-'));
+  await cp(EXAMPLES, dir, { recursive: true });
+  const heroDir = path.join(dir, 'assets', 'solara-spf50');
+  await rm(heroDir, { recursive: true });
+  await mkdir(heroDir);
+  await writeFile(path.join(heroDir, heroFile), hero);
+  const raw = YAML.parse(await readFile(path.join(dir, 'brief.yaml'), 'utf8'));
+  edit(raw);
+  await writeFile(path.join(dir, 'brief.yaml'), YAML.stringify(raw));
+  const out = path.join(dir, 'out');
+  const report = await runPipeline(await loadBrief(path.join(dir, 'brief.yaml')), {
+    provider: { name: 'mock', ...mock },
+    storage: new LocalStorage(out),
+    log: () => {},
+  });
+  return { report, adDir: path.join(out, raw.campaign.id, 'solara-spf50') };
+}
+
+test('a reused phone photo tagged with EXIF rotation renders upright', async () => {
+  // Stored left red, right blue, tagged rotate 90: upright it is red above blue, so a top row is one color.
+  const sideways = await sharp(await solid(800, 400, '#FF0000'))
+    .composite([{ input: await solid(400, 400, '#0000FF'), left: 400, top: 0 }])
+    .withMetadata({ orientation: 6 }).jpeg().toBuffer();
+  const { adDir } = await runWithHero('hero.jpg', sideways);
+  const { data, info } = await sharp(path.join(adDir, '1x1', 'en-US.png')).raw().toBuffer({ resolveWithObject: true });
+  const px = x => [...data.subarray((20 * info.width + x) * info.channels, (20 * info.width + x) * info.channels + 3)];
+  assert.deepEqual(px(500), px(1060));
+});
+
+test('a reused transparent cutout gives an opaque ad', async () => {
+  const cutout = await sharp({ create: { width: 800, height: 800, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+  const { adDir } = await runWithHero('hero.png', cutout);
+  assert.equal((await sharp(path.join(adDir, '1x1', 'en-US.png')).stats()).isOpaque, true);
+});
+
+test('long uppercase product names and all-caps copy stay inside the right margin', async () => {
+  const hero = await solid(1200, 1200, '#808080');
+  const { image, background } = await renderBase(hero, '1x1', {
+    productName: 'Ultra Sheer Dry Touch Mineral Sunscreen Broad Spectrum SPF 50+ Family Size',
+    message: 'WATERWORKS MEGASUMMER WWWWWWWW MMMMMMMMMM',
+    accent: '#FF0000',
+  });
+  const margin = { left: 1040, top: 0, width: 40, height: 1080 };
+  const raw = b => sharp(b).extract(margin).removeAlpha().raw().toBuffer();
+  assert.deepEqual(await raw(image), await raw(background));
+});
+
+test('long copy shrinks to fit below the logo, short copy keeps its size', async () => {
+  const hero = await solid(1200, 1200, '#808080');
+  const opts = { productName: 'P', accent: '#FF0000' };
+  const short = await renderBase(hero, '1x1', { ...opts, message: 'Sun care' });
+  assert.equal(short.textBox.top, 879); // full 70 px type
+  const long = await renderBase(hero, '1x1', { ...opts, message: 'Stay protected all summer long with our lightweight everyday formula. '.repeat(4) });
+  assert.ok(long.textBox.top >= 65 + 238, `text starts at ${long.textBox.top}, inside the logo area`);
+});
+
+test('copy too long even at the smallest type fails the layout check', async () => {
+  const { report } = await runWithHero('hero.png', await solid(1200, 1200, '#808080'), raw => {
+    raw.campaign.message['en-US'] = 'Stay protected all summer long with our lightweight everyday formula. '.repeat(12);
+  });
+  const ads = report.products[0].creatives.filter(c => c.locale === 'en-US');
+  const byRatio = Object.fromEntries(ads.map(c => [c.ratio, c]));
+  assert.equal(byRatio['1x1'].checks.layout.pass, false);
+  assert.equal(byRatio['1x1'].status, 'warn');
+  const short = report.products[0].creatives.find(c => c.locale === 'es-MX' && c.ratio === '9x16');
+  assert.equal(short.checks.layout.pass, true);
+});
+
+test('a very tall logo is capped instead of crashing the product', async () => {
+  const hero = await solid(1920, 1080, '#808080');
+  const tall = await sharp({ create: { width: 50, height: 2000, channels: 4, background: '#FFFFFF' } }).png().toBuffer();
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'logo-'));
+  const file = path.join(dir, 'logo.png');
+  await writeFile(file, tall);
+  const { logoBox } = await addLogo(hero, '16x9', file);
+  assert.ok(logoBox.height <= Math.round(1080 * 0.22));
 });

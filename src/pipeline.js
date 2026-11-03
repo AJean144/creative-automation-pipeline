@@ -38,7 +38,8 @@ async function getHeroes(brief, product, provider, storage, log) {
   const existing = await findHero(brief.dir, product.id);
   if (existing) {
     log(`  ${product.id}: reusing ${path.relative(process.cwd(), existing)}`);
-    const buffer = await readFile(existing);
+    // Phone photos store rotation as a tag and cutouts have no background; settle both before QA, crop and render.
+    const buffer = await sharp(await readFile(existing)).autoOrient().flatten({ background: '#FFFFFF' }).png().toBuffer();
     const { result, check } = await checkVisual(buffer, brief, product);
     const { width, height } = await sharp(buffer).metadata();
     const crop = async r => {
@@ -77,12 +78,15 @@ async function getHeroes(brief, product, provider, storage, log) {
 
 async function renderProduct(brief, product, provider, storage, log) {
   const started = Date.now();
-  const hero = await getHeroes(brief, product, provider, storage, log);
+  const copy = brief.campaign.locales.map(locale => {
+    const message = brief.campaign.message[locale];
+    return { locale, message, flagged: findProhibited(`${product.name} ${message}`, brief.brand.prohibitedWords) };
+  });
+  // Legal runs first: copy blocked in every locale must not pay for images or visual QA.
+  const hero = copy.some(c => !c.flagged.length) ? await getHeroes(brief, product, provider, storage, log) : null;
   const creatives = [];
 
-  for (const locale of brief.campaign.locales) {
-    const message = brief.campaign.message[locale];
-    const flagged = findProhibited(`${product.name} ${message}`, brief.brand.prohibitedWords);
+  for (const { locale, message, flagged } of copy) {
     if (flagged.length) {
       // Fail closed: copy with a prohibited word never becomes a finished asset.
       log(`  ${product.id}/${locale}: BLOCKED, prohibited words: ${flagged.join(', ')}`);
@@ -98,18 +102,20 @@ async function renderProduct(brief, product, provider, storage, log) {
         contrast: await textContrast(base.background, base.textBox, base.textColor),
         logo: await logoVisible(base.image, image, logo, logoBox),
         palette: await paletteShare(image, brief.brand.colors),
+        layout: { pass: base.textBox.top >= logoBox.top + logoBox.height, textTop: base.textBox.top, logoBottom: logoBox.top + logoBox.height },
         visual: hero.visual[ratio],
       };
       const file = path.join(brief.campaign.id, product.id, ratio, `${locale}.png`);
       await storage.save(file, image);
       const failed = Object.keys(checks).filter(k => !checks[k].skipped && !checks[k].pass);
-      const status = failed.length ? 'warn' : 'pass';
+      // A check that never ran can't vouch for the ad, so nothing failing is not enough for a pass.
+      const status = failed.length ? 'warn' : Object.values(checks).some(c => c.skipped) ? 'unchecked' : 'pass';
       log(`  ${product.id}/${ratio}/${locale}: ${status}${failed.length ? ` (${failed.join(', ')})` : ''}`);
       creatives.push({ locale, ratio, status, file, checks });
     }
   }
 
-  return { product: product.id, heroSource: hero.source, heroPaths: hero.paths, heroPrompt: hero.prompt, ms: Date.now() - started, creatives };
+  return { product: product.id, heroSource: hero?.source ?? null, heroPaths: hero?.paths ?? [], heroPrompt: hero?.prompt, ms: Date.now() - started, creatives };
 }
 
 export async function runPipeline(brief, { provider, storage, log = console.log }) {
@@ -131,10 +137,10 @@ export async function runPipeline(brief, { provider, storage, log = console.log 
     provider: provider.name,
     generatedAt: new Date().toISOString(),
     ms: Date.now() - started,
-    summary: { creatives: all.length, pass: count('pass'), warn: count('warn'), blocked: count('blocked'), failedProducts: products.filter(p => p.error).length },
+    summary: { creatives: all.length, pass: count('pass'), unchecked: count('unchecked'), warn: count('warn'), blocked: count('blocked'), failedProducts: products.filter(p => p.error).length },
     products,
   };
   const reportPath = await storage.save(path.join(brief.campaign.id, 'report.json'), JSON.stringify(report, null, 2));
-  log(`Done in ${(report.ms / 1000).toFixed(1)}s: ${report.summary.pass} pass, ${report.summary.warn} warn, ${report.summary.blocked} blocked. Report: ${path.relative(process.cwd(), reportPath)}`);
+  log(`Done in ${(report.ms / 1000).toFixed(1)}s: ${report.summary.pass} pass, ${report.summary.unchecked} unchecked, ${report.summary.warn} warn, ${report.summary.blocked} blocked. Report: ${path.relative(process.cwd(), reportPath)}`);
   return report;
 }

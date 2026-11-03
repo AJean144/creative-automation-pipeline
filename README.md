@@ -12,9 +12,9 @@ That runs the example brief with a built-in mock image model. It needs no keys a
 ## What it does
 
 ```
-brief.yaml ──► validate ──► hero image per product ──► per locale: legal check ──► per ratio: crop, text, logo ──► checks ──► out/
-                             reuse examples/assets/<id>/      (fail closed)                                  contrast, logo,
-                             or generate (Higgsfield)                                                       palette, visual QA
+brief.yaml ──► validate ──► per locale: legal check ──► hero image per product ──► per ratio: crop, text, logo ──► checks ──► out/
+                             (fail closed, runs first)    reuse examples/assets/<id>/                          contrast, logo,
+                                                          or generate (Higgsfield)                             palette, layout, visual QA
 ```
 
 For each product:
@@ -45,7 +45,7 @@ Requires Node 20.6 or later.
 | `npm start` | Example brief, mock images | none | free |
 | `npm run start:live` | Example brief, real AI images from Higgsfield | `HF_CREDENTIALS` | under 2 cents |
 | `npm run start:live -- --brief examples/brief-jp.yaml` | Japan brief: English and Japanese copy | `HF_CREDENTIALS` | under 2 cents |
-| `npm test` | 10 tests, no network | none | free |
+| `npm test` | 21 tests, no network | none | free |
 | `node --env-file=.env.local scripts/probe-visual.js out/summer-sun-jp` | Runs 7 known cases through visual QA (needs a live run first) | `TYPESAFE_API_KEY` | a fraction of a cent |
 
 CLI options:
@@ -61,7 +61,7 @@ Copy `.env.example` to `.env.local` and fill it in. `.env.local` is git-ignored.
 | Variable | Used for | If missing |
 |---|---|---|
 | `HF_CREDENTIALS` | Generating hero images (`key-id:key-secret` from console.higgsfield.ai) | `--provider higgsfield` stops with a clear error. Mock still works. |
-| `TYPESAFE_API_KEY` | Visual QA of hero images | Visual check is marked `skipped` in the report. Skipped never counts as a pass. |
+| `TYPESAFE_API_KEY` | Visual QA of hero images | Visual check is marked `skipped` and the ad is `unchecked`. Skipped never counts as a pass. |
 | `HF_IMAGE_MODEL` | Optional model override | Defaults to `higgsfield-ai/soul/v2/standard` |
 
 ## The brief
@@ -99,9 +99,10 @@ Two kinds of checks run on each ad. **Measured** checks are math on pixels: the 
 | Contrast | Measured | Text vs. the brightest 10% of pixels behind it ≥ 4.5:1 (WCAG AA) | Unreadable text on a bright photo |
 | Logo | Measured | Logo differs from what is behind it by ΔE2000 ≥ 10 | A white logo on a white beach disappears |
 | Palette | Measured | Brand colours cover ≥ 2% of the ad (within ΔE 15) | Ad drifts off-brand |
+| Layout | Measured | Text starts below the logo | Long copy shrinks to fit, down to a floor. Past that it runs into the logo or off the top, and is never cut |
 | Visual | Judged (TypeSafe) | Product is there, whole, and its label has no fake words | AI images cut products off and write fake text |
 
-A failed check marks the ad `warn`: the file is still written, and the report says why. Only legal fails closed, because blocked copy should never reach a reviewer as a finished asset.
+A failed check marks the ad `warn`: the file is still written, and the report says why. An ad with no failures but a skipped check is `unchecked`. Only legal fails closed, because blocked copy should never reach a reviewer as a finished asset.
 
 ### Visual QA
 
@@ -136,7 +137,7 @@ The real sunscreen photo scored 0.69 on one run and 0.73 on the next. That sits 
 - **The model draws the picture, the code draws the words.** Image models misspell text. The message is set with real fonts, so it's always spelled right, in any language, and easy to change.
 - **Reuse first.** An approved photo beats a generated one. Generation only fills gaps.
 - **Generate each ratio natively.** Cropping one square image to 9:16 and 16:9 cut the product out. Asking the model for each ratio costs 3× (still under a cent per product) and keeps the product in frame. Reused photos are cropped around the product box that visual QA finds.
-- **Skipped is not a pass.** With no TypeSafe key, the report says `skipped`. A failed API call is reported as an error, never as a pass.
+- **Skipped is not a pass.** With no TypeSafe key, the check says `skipped` and an otherwise clean ad is `unchecked`, not `pass`. A failed API call is reported as an error, never as a pass.
 - **Mock by default.** Anyone can clone and run it in seconds with no account. The mock provider is also what the tests use.
 - **Swappable parts.** Image providers sit behind one `generate(prompt, {aspectRatio})` function. Storage sits behind one `save(path, data)`. Moving to S3 or Azure Blob means changing one file.
 - **Products run in parallel.** One product failing doesn't lose the others' work. The failure is recorded in the report.
@@ -171,6 +172,7 @@ A creative's entry in `report.json`:
     "contrast": { "pass": true, "value": 8.46, "limit": 4.5 },
     "logo":     { "pass": true, "value": 23.6, "limit": 10 },
     "palette":  { "pass": true, "value": 0.316, "limit": 0.02 },
+    "layout":   { "pass": true, "textTop": 798, "logoBottom": 134 },
     "visual":   { "pass": true, "present": 0.74, "whole": 0.95, "garbled": 0.13, "model": "jev-1.14.0" }
   }
 }
@@ -203,7 +205,7 @@ A creative's entry in `report.json`:
 ```
 src/cli.js              argument parsing, exit codes
 src/brief.js            brief schema and validation (zod)
-src/pipeline.js         the run: heroes, legal, render, checks, report
+src/pipeline.js         the run: legal, heroes, render, checks, report
 src/assets.js           finds reusable hero images
 src/render.js           crop, gradient, text wrapping (incl. CJK), logo
 src/color.js            Lab, ΔE2000, WCAG contrast
