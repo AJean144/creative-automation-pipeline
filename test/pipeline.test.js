@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, readFile, cp } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, cp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -77,11 +77,58 @@ test('pipeline reuses assets, generates missing ones, blocks prohibited copy', a
   const bySource = Object.fromEntries(report.products.map(p => [p.product, p.heroSource]));
   assert.deepEqual(bySource, { 'solara-spf50': 'reused', 'solara-aloe-gel': 'generated' });
   assert.equal(report.summary.blocked, 2);          // es-MX blocked for both products
-  assert.equal(report.summary.pass + report.summary.warn, 6); // 2 products x 3 ratios x en-US
+  assert.equal(report.summary.pass + report.summary.unchecked + report.summary.warn, 6); // 2 products x 3 ratios x en-US
 
   const sample = path.join(dir, 'out', 'summer-sun-mx', 'solara-spf50', '9x16', 'en-US.png');
   const { width, height } = await sharp(sample).metadata();
   assert.deepEqual([width, height], [1080, 1920]);
+});
+
+test('copy blocked in every locale generates no images', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'run-'));
+  await cp(EXAMPLES, dir, { recursive: true });
+  const raw = YAML.parse(await readFile(path.join(dir, 'brief.yaml'), 'utf8'));
+  for (const locale of raw.campaign.locales) raw.campaign.message[locale] = 'A miracle cure.';
+  await writeFile(path.join(dir, 'brief.yaml'), YAML.stringify(raw));
+
+  let calls = 0;
+  const report = await runPipeline(await loadBrief(path.join(dir, 'brief.yaml')), {
+    provider: { name: 'counting', generate: (...args) => { calls++; return mock.generate(...args); } },
+    storage: new LocalStorage(path.join(dir, 'out')),
+    log: () => {},
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(report.summary.blocked, 4); // 2 products x 2 locales
+  assert.equal(report.summary.failedProducts, 0);
+});
+
+test('an ad whose visual check was skipped is unchecked, not a pass', async (t) => {
+  const key = process.env.TYPESAFE_API_KEY;
+  delete process.env.TYPESAFE_API_KEY;
+  t.after(() => { if (key !== undefined) process.env.TYPESAFE_API_KEY = key; });
+
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'run-'));
+  const report = await runPipeline(await loadBrief(path.join(EXAMPLES, 'brief.yaml')), {
+    provider: { name: 'mock', ...mock },
+    storage: new LocalStorage(dir),
+    log: () => {},
+  });
+
+  assert.equal(report.summary.pass, 0);
+  assert.equal(report.summary.unchecked + report.summary.warn, 12);
+  const clean = report.products.flatMap(p => p.creatives).filter(c => c.status === 'unchecked');
+  assert.ok(clean.length > 0 && clean.every(c => c.checks.visual.skipped));
+});
+
+test('findHero skips hidden files such as macOS ._hero.jpg', async () => {
+  const { findHero } = await import('../src/assets.js');
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'assets-'));
+  await mkdir(path.join(dir, 'assets', 'p'), { recursive: true });
+  await writeFile(path.join(dir, 'assets', 'p', '._hero.jpg'), 'x');
+  assert.equal(await findHero(dir, 'p'), null);
+  await writeFile(path.join(dir, 'assets', 'p', 'hero.jpg'), 'x');
+  assert.equal(await findHero(dir, 'p'), path.join(dir, 'assets', 'p', 'hero.jpg'));
 });
 
 test('visual verdict: decisions follow the thresholds, garbled labels never trigger a retry', async () => {

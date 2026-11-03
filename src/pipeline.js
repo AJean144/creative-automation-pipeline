@@ -77,12 +77,15 @@ async function getHeroes(brief, product, provider, storage, log) {
 
 async function renderProduct(brief, product, provider, storage, log) {
   const started = Date.now();
-  const hero = await getHeroes(brief, product, provider, storage, log);
+  const copy = brief.campaign.locales.map(locale => {
+    const message = brief.campaign.message[locale];
+    return { locale, message, flagged: findProhibited(`${product.name} ${message}`, brief.brand.prohibitedWords) };
+  });
+  // Legal runs first: copy blocked in every locale must not pay for images or visual QA.
+  const hero = copy.some(c => !c.flagged.length) ? await getHeroes(brief, product, provider, storage, log) : null;
   const creatives = [];
 
-  for (const locale of brief.campaign.locales) {
-    const message = brief.campaign.message[locale];
-    const flagged = findProhibited(`${product.name} ${message}`, brief.brand.prohibitedWords);
+  for (const { locale, message, flagged } of copy) {
     if (flagged.length) {
       // Fail closed: copy with a prohibited word never becomes a finished asset.
       log(`  ${product.id}/${locale}: BLOCKED, prohibited words: ${flagged.join(', ')}`);
@@ -103,13 +106,14 @@ async function renderProduct(brief, product, provider, storage, log) {
       const file = path.join(brief.campaign.id, product.id, ratio, `${locale}.png`);
       await storage.save(file, image);
       const failed = Object.keys(checks).filter(k => !checks[k].skipped && !checks[k].pass);
-      const status = failed.length ? 'warn' : 'pass';
+      // A check that never ran can't vouch for the ad, so nothing failing is not enough for a pass.
+      const status = failed.length ? 'warn' : Object.values(checks).some(c => c.skipped) ? 'unchecked' : 'pass';
       log(`  ${product.id}/${ratio}/${locale}: ${status}${failed.length ? ` (${failed.join(', ')})` : ''}`);
       creatives.push({ locale, ratio, status, file, checks });
     }
   }
 
-  return { product: product.id, heroSource: hero.source, heroPaths: hero.paths, heroPrompt: hero.prompt, ms: Date.now() - started, creatives };
+  return { product: product.id, heroSource: hero?.source ?? null, heroPaths: hero?.paths ?? [], heroPrompt: hero?.prompt, ms: Date.now() - started, creatives };
 }
 
 export async function runPipeline(brief, { provider, storage, log = console.log }) {
@@ -131,10 +135,10 @@ export async function runPipeline(brief, { provider, storage, log = console.log 
     provider: provider.name,
     generatedAt: new Date().toISOString(),
     ms: Date.now() - started,
-    summary: { creatives: all.length, pass: count('pass'), warn: count('warn'), blocked: count('blocked'), failedProducts: products.filter(p => p.error).length },
+    summary: { creatives: all.length, pass: count('pass'), unchecked: count('unchecked'), warn: count('warn'), blocked: count('blocked'), failedProducts: products.filter(p => p.error).length },
     products,
   };
   const reportPath = await storage.save(path.join(brief.campaign.id, 'report.json'), JSON.stringify(report, null, 2));
-  log(`Done in ${(report.ms / 1000).toFixed(1)}s: ${report.summary.pass} pass, ${report.summary.warn} warn, ${report.summary.blocked} blocked. Report: ${path.relative(process.cwd(), reportPath)}`);
+  log(`Done in ${(report.ms / 1000).toFixed(1)}s: ${report.summary.pass} pass, ${report.summary.unchecked} unchecked, ${report.summary.warn} warn, ${report.summary.blocked} blocked. Report: ${path.relative(process.cwd(), reportPath)}`);
   return report;
 }

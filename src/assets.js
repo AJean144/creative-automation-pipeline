@@ -13,6 +13,7 @@ export async function findHero(briefDir, productId) {
     if (err.code === 'ENOENT') return null;
     throw err;
   }
-  const first = files.filter(f => IMAGE.test(f)).sort()[0];
+  // Dotfiles include macOS ._hero.jpg metadata, which matches IMAGE and sorts ahead of the real photo.
+  const first = files.filter(f => !f.startsWith('.') && IMAGE.test(f)).sort()[0];
   return first ? path.join(dir, first) : null;
 }
