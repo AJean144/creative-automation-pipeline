@@ -32,6 +32,17 @@ test('legal check matches whole words, any case, accented text', () => {
   assert.deepEqual(findProhibited('くすみが治る', ['治る']), ['治る']);
 });
 
+test('legal check sees through spacing, Unicode forms and invisible characters', () => {
+  const phrase = ['clinically proven'];
+  assert.deepEqual(findProhibited('Clinically  proven', phrase), phrase);
+  assert.deepEqual(findProhibited('clinically\nproven', phrase), phrase);
+  assert.deepEqual(findProhibited('Curacio\u0301n total', ['curación']), ['curación']);
+  assert.deepEqual(findProhibited('mir\u200Bacle', ['miracle']), ['miracle']);
+  assert.deepEqual(findProhibited('ﬁrst aid', ['first']), ['first']);
+  assert.deepEqual(findProhibited('ﾅｵﾙ', ['ナオル']), ['ナオル']);
+  assert.deepEqual(findProhibited('Miraculous results', ['miracle']), []);
+});
+
 test('wrapText breaks CJK between characters without inserting spaces', () => {
   const lines = wrapText('長い一日も、軽やかにUVケア。', 70, 840);
   assert.ok(lines.length > 1);
